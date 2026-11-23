@@ -6,7 +6,9 @@ type Props = {
 export function Home({ onStart, micStatus }: Props) {
   return (
     <section className="home">
-      <div className="home-atmosphere" aria-hidden="true" />
+      <div className="home-atmosphere" aria-hidden="true">
+        <div className="home-orb" />
+      </div>
       <div className="home-content">
         <p className="brand">flowy</p>
         <h1 className="headline">Breathe out loud. Speak smoother.</h1>

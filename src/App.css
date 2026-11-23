@@ -82,6 +82,32 @@
   pointer-events: none;
 }
 
+.home-orb {
+  position: absolute;
+  top: 12%;
+  left: 50%;
+  width: min(58vw, 220px);
+  height: min(58vw, 220px);
+  translate: -50% 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, #c9f3ea 0%, #5cb8a8 45%, #1a6a62 100%);
+  box-shadow: 0 0 60px 24px rgba(127, 212, 197, 0.28);
+  animation: home-breathe 5.5s ease-in-out infinite;
+}
+
+@keyframes home-breathe {
+  0%,
+  100% {
+    transform: scale(0.86);
+    opacity: 0.88;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+}
+
 .home-content {
   position: relative;
   z-index: 1;
