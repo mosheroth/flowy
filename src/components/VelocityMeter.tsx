@@ -6,7 +6,7 @@ type Props = {
 }
 
 export function VelocityMeter({ level, speed, active, score }: Props) {
-  const bar = Math.min(1, level * 1.15)
+  const bar = Math.min(1, level * 1.6)
   const jitter = Math.min(1, speed / 0.4)
 
   return (

@@ -22,10 +22,14 @@ export type ExhaleQuality = {
   label: 'silent' | 'harsh' | 'uneven' | 'steady' | 'gentle'
 }
 
-const IDEAL_LEVEL_MIN = 0.04
-const IDEAL_LEVEL_MAX = 0.45
-const HARSH_SPEED = 0.35
-const SILENT_COVERAGE = 0.12
+/** Soft breath noise often sits well below speech — keep the floor low. */
+export const AUDIBLE_LEVEL = 0.012
+const IDEAL_LEVEL_MIN = AUDIBLE_LEVEL
+const IDEAL_LEVEL_MAX = 0.55
+const HARSH_SPEED = 0.45
+const SILENT_COVERAGE = 0.08
+/** Gain so quiet hiss registers without shouting. */
+const RMS_GAIN = 36
 
 export class BreathMic {
   private stream: MediaStream | null = null
@@ -45,15 +49,17 @@ export class BreathMic {
       audio: {
         echoCancellation: false,
         noiseSuppression: false,
-        autoGainControl: false,
+        // Soft breath needs whatever gain the OS can give.
+        autoGainControl: true,
       },
       video: false,
     })
     this.ctx = new AudioContext()
+    if (this.ctx.state === 'suspended') await this.ctx.resume()
     this.source = this.ctx.createMediaStreamSource(this.stream)
     this.analyser = this.ctx.createAnalyser()
-    this.analyser.fftSize = 2048
-    this.analyser.smoothingTimeConstant = 0.2
+    this.analyser.fftSize = 1024
+    this.analyser.smoothingTimeConstant = 0.05
     this.source.connect(this.analyser)
     this.data = new Float32Array(this.analyser.fftSize) as Float32Array<ArrayBuffer>
     this.prevLevel = 0
@@ -85,9 +91,9 @@ export class BreathMic {
       sum += v * v
     }
     const rms = Math.sqrt(sum / this.data.length)
-    // Soft compress into 0–1 usable range for breath noise.
-    const raw = Math.min(1, rms * 8)
-    const level = this.prevLevel * 0.72 + raw * 0.28
+    // Soft compress into 0–1; high gain so quiet exhalation still moves the meter.
+    const raw = Math.min(1, Math.pow(rms * RMS_GAIN, 0.85))
+    const level = this.prevLevel * 0.45 + raw * 0.55
     const now = performance.now()
     const dt = Math.max(0.016, (now - this.prevTime) / 1000)
     const velocity = (level - this.prevLevel) / dt
@@ -126,21 +132,20 @@ export function scoreExhale(samples: BreathSample[]): ExhaleQuality {
     }
   }
 
-  // Steadiness: reward moderate level + low speed (smooth airflow).
   const levelCenter = (IDEAL_LEVEL_MIN + IDEAL_LEVEL_MAX) / 2
   const levelSpan = (IDEAL_LEVEL_MAX - IDEAL_LEVEL_MIN) / 2
   const levelFit = 1 - Math.min(1, Math.abs(meanLevel - levelCenter) / levelSpan)
   const speedFit = 1 - Math.min(1, meanSpeed / HARSH_SPEED)
-  const coverageFit = Math.min(1, coverage / 0.55)
+  const coverageFit = Math.min(1, coverage / 0.4)
 
   const score = Math.round(
-    Math.max(0, Math.min(100, (levelFit * 0.35 + speedFit * 0.4 + coverageFit * 0.25) * 100)),
+    Math.max(0, Math.min(100, (levelFit * 0.3 + speedFit * 0.35 + coverageFit * 0.35) * 100)),
   )
 
   let label: ExhaleQuality['label'] = 'steady'
   if (meanSpeed > HARSH_SPEED * 0.85) label = 'harsh'
-  else if (speedFit < 0.55 || coverageFit < 0.5) label = 'uneven'
-  else if (meanLevel < 0.12) label = 'gentle'
+  else if (speedFit < 0.55 || coverageFit < 0.45) label = 'uneven'
+  else if (meanLevel < 0.1) label = 'gentle'
   else label = 'steady'
 
   return { score, meanLevel, meanSpeed, coverage, label }

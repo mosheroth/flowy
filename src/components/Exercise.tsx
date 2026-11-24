@@ -24,8 +24,6 @@ function phaseTitle(phase: Phase, cycle: number, cycles: number): string {
       return 'Inhale quietly'
     case 'exhale':
       return 'Exhale with sound'
-    case 'rest':
-      return 'Soft reset'
     case 'done':
       return 'Session complete'
     default:
@@ -33,10 +31,16 @@ function phaseTitle(phase: Phase, cycle: number, cycles: number): string {
   }
 }
 
-function phaseSub(phase: Phase, label: CycleResult['label'] | null): string {
-  if (phase === 'inhale') return 'Fill gently through the nose'
-  if (phase === 'exhale') return 'Let a soft hiss ride the breath out'
-  if (phase === 'rest' && label) return QUALITY_COPY[label]
+function phaseSub(
+  phase: Phase,
+  label: CycleResult['label'] | null,
+  cycle: number,
+): string {
+  if (phase === 'inhale') {
+    if (cycle > 1 && label) return QUALITY_COPY[label]
+    return 'Fill gently through the nose'
+  }
+  if (phase === 'exhale') return 'A soft hiss is enough — no need to push'
   if (phase === 'done') return 'Steady exhalation trains calmer speech airflow'
   return ''
 }
@@ -77,7 +81,7 @@ export function Exercise({
           speed={speed}
         />
         <h2 className="phase-title">{phaseTitle(phase, cycle, cycles)}</h2>
-        <p className="phase-sub">{phaseSub(phase, liveLabel)}</p>
+        <p className="phase-sub">{phaseSub(phase, liveLabel, cycle)}</p>
 
         <VelocityMeter
           level={level}

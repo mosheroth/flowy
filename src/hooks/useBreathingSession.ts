@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  AUDIBLE_LEVEL,
   scoreExhale,
   type BreathSample,
   type ExhaleQuality,
 } from '../lib/audioBreath'
 
-export type Phase = 'ready' | 'inhale' | 'exhale' | 'rest' | 'done'
+export type Phase = 'ready' | 'inhale' | 'exhale' | 'done'
 
 export type CycleResult = ExhaleQuality & { cycle: number }
 
-const INHALE_MS = 4000
-const EXHALE_MS = 6000
-const REST_MS = 1200
+const INHALE_MS = 3500
+const EXHALE_MS = 5000
+/** Don't cut exhale off before the person has started. */
+const EXHALE_MIN_MS = 1800
+/** After sound was heard, this much quiet means the breath is done. */
+const QUIET_END_MS = 350
 const DEFAULT_CYCLES = 4
 
 type Options = {
@@ -36,6 +40,10 @@ export function useBreathingSession({
   const cyclesRef = useRef(cycles)
   const timerRef = useRef(0)
   const rafRef = useRef(0)
+  const exhaleStartedAtRef = useRef(0)
+  const heardBreathRef = useRef(false)
+  const quietSinceRef = useRef<number | null>(null)
+  const finishingRef = useRef(false)
   const setListeningRef = useRef(setListening)
   const beginInhaleRef = useRef<() => void>(() => {})
   const beginExhaleRef = useRef<() => void>(() => {})
@@ -66,13 +74,13 @@ export function useBreathingSession({
 
   useEffect(() => {
     beginInhaleRef.current = () => {
+      finishingRef.current = false
       setListeningRef.current(false)
       const next = cycleRef.current + 1
       cycleRef.current = next
       setCycle(next)
       setPhase('inhale')
       setProgress(0)
-      setLiveQuality(null)
       runProgress(INHALE_MS)
       timerRef.current = window.setTimeout(() => {
         beginExhaleRef.current()
@@ -80,9 +88,13 @@ export function useBreathingSession({
     }
 
     beginExhaleRef.current = () => {
+      finishingRef.current = false
       setPhase('exhale')
       setProgress(0)
       samplesRef.current = []
+      heardBreathRef.current = false
+      quietSinceRef.current = null
+      exhaleStartedAtRef.current = performance.now()
       setListeningRef.current(true)
       runProgress(EXHALE_MS)
       timerRef.current = window.setTimeout(() => {
@@ -91,6 +103,9 @@ export function useBreathingSession({
     }
 
     afterExhaleRef.current = () => {
+      if (finishingRef.current) return
+      finishingRef.current = true
+      clearTimers()
       setListeningRef.current(false)
       const quality = scoreExhale(samplesRef.current)
       samplesRef.current = []
@@ -104,21 +119,33 @@ export function useBreathingSession({
         return
       }
 
-      setPhase('rest')
-      setProgress(0)
-      runProgress(REST_MS)
-      timerRef.current = window.setTimeout(() => {
-        beginInhaleRef.current()
-      }, REST_MS)
+      // No dead "rest" — roll straight into the next inhale.
+      beginInhaleRef.current()
     }
-  }, [runProgress])
+  }, [clearTimers, runProgress])
 
   useEffect(() => {
-    if (phase === 'exhale' && sample.timestamp > 0) {
-      samplesRef.current.push(sample)
-      if (samplesRef.current.length % 8 === 0) {
-        setLiveQuality(scoreExhale(samplesRef.current))
-      }
+    if (phase !== 'exhale' || sample.timestamp <= 0 || finishingRef.current) return
+
+    samplesRef.current.push(sample)
+    if (samplesRef.current.length % 6 === 0) {
+      setLiveQuality(scoreExhale(samplesRef.current))
+    }
+
+    const now = sample.timestamp
+    const elapsed = now - exhaleStartedAtRef.current
+
+    if (sample.level >= AUDIBLE_LEVEL) {
+      heardBreathRef.current = true
+      quietSinceRef.current = null
+      return
+    }
+
+    if (!heardBreathRef.current || elapsed < EXHALE_MIN_MS) return
+
+    if (quietSinceRef.current === null) quietSinceRef.current = now
+    if (now - quietSinceRef.current >= QUIET_END_MS) {
+      afterExhaleRef.current()
     }
   }, [phase, sample])
 
@@ -133,6 +160,7 @@ export function useBreathingSession({
 
   const stop = useCallback(() => {
     clearTimers()
+    finishingRef.current = true
     setListeningRef.current(false)
     samplesRef.current = []
     setPhase('ready')
