@@ -2,7 +2,7 @@
 .brand {
   font-family: var(--font-display);
   font-weight: 700;
-  font-size: clamp(2.75rem, 12vw, 4.25rem);
+  font-size: 2.85rem;
   letter-spacing: -0.04em;
   line-height: 0.95;
   margin: 0;
@@ -52,7 +52,7 @@
 .home {
   position: relative;
   min-height: 100%;
-  min-height: 100dvh;
+  height: 100%;
   display: flex;
   align-items: flex-end;
   overflow: hidden;
@@ -86,8 +86,9 @@
   position: absolute;
   top: 12%;
   left: 50%;
-  width: min(58vw, 220px);
-  height: min(58vw, 220px);
+  width: min(220px, 58%);
+  aspect-ratio: 1;
+  height: auto;
   translate: -50% 0;
   border-radius: 50%;
   background:
@@ -121,7 +122,7 @@
 .headline {
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: clamp(1.55rem, 5.6vw, 2rem);
+  font-size: 1.65rem;
   line-height: 1.2;
   letter-spacing: -0.02em;
   margin: 0.35rem 0 0;
@@ -154,7 +155,7 @@
 /* —— exercise —— */
 .exercise {
   min-height: 100%;
-  min-height: 100dvh;
+  height: 100%;
   display: flex;
   flex-direction: column;
   background:
@@ -194,7 +195,7 @@
 .phase-title {
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: clamp(1.5rem, 5vw, 1.85rem);
+  font-size: 1.65rem;
   margin: 0.4rem 0 0;
   letter-spacing: -0.02em;
 }
@@ -211,11 +212,18 @@
 /* —— orb —— */
 .orb-stage {
   position: relative;
-  width: min(68vw, 240px);
-  height: min(68vw, 240px);
+  width: min(68cqi, 240px);
+  height: min(68cqi, 240px);
   display: grid;
   place-items: center;
   margin: 0.4rem 0 0.2rem;
+}
+
+@supports not (width: 1cqi) {
+  .orb-stage {
+    width: min(68vw, 240px);
+    height: min(68vw, 240px);
+  }
 }
 
 .orb,
@@ -413,18 +421,4 @@
   }
 }
 
-@media (min-width: 720px) {
-  .home {
-    align-items: center;
-    justify-content: flex-start;
-    padding-left: clamp(2rem, 8vw, 6rem);
-  }
-
-  .home-content {
-    width: min(100%, 32rem);
-  }
-
-  .headline {
-    max-width: 18ch;
-  }
-}
+/* Phone-shell preview: keep the same mobile home layout on wide screens. */
