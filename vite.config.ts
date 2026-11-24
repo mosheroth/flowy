@@ -1,8 +1,10 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-// Relative base works on GitHub Pages (/flowy/) and root hosts (Cursor Apps).
+// Project Pages live under /flowy/; Cursor Apps and local serve from /.
+const pages = process.env.GITHUB_PAGES === 'true'
+
 export default defineConfig({
   plugins: [react()],
-  base: './',
+  base: pages ? '/flowy/' : '/',
 })

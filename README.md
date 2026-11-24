@@ -25,10 +25,13 @@ Vite + React + TypeScript. No backend required for the starter session.
 
 ## GitHub Pages
 
-Deploy is automated via `.github/workflows/deploy-pages.yml` on every push to `main`.
+Site: `https://mosheroth.github.io/flowy/`
 
-1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**
-2. Merge this branch into `main` (or run the workflow manually after that)
-3. Open `https://mosheroth.github.io/flowy/`
+**Important:** Pages must NOT deploy the raw `main` branch root (that serves the Vite source `index.html` and shows a blank page).
 
-Note: this repo is currently **private**. GitHub Pages on a private repo needs GitHub Pro (or make the repo public).
+In the repo **Settings → Pages → Build and deployment**:
+
+- Preferred: **Source = GitHub Actions** (uses `.github/workflows/deploy-pages.yml`), or
+- Alternative: **Source = Deploy from a branch** → branch **`gh-pages`** / folder `/ (root)`
+
+Every push to `main` rebuilds via Actions; the `gh-pages` branch is also updated with the static build.
