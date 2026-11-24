@@ -22,3 +22,13 @@ During each exhale the app samples microphone RMS as a proxy for airflow, derive
 ## Stack
 
 Vite + React + TypeScript. No backend required for the starter session.
+
+## GitHub Pages
+
+Deploy is automated via `.github/workflows/deploy-pages.yml` on every push to `main`.
+
+1. Repo **Settings → Pages → Build and deployment → Source: GitHub Actions**
+2. Merge this branch into `main` (or run the workflow manually after that)
+3. Open `https://mosheroth.github.io/flowy/`
+
+Note: this repo is currently **private**. GitHub Pages on a private repo needs GitHub Pro (or make the repo public).
