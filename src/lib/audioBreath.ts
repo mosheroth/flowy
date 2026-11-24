@@ -1,7 +1,7 @@
 /** Mic analysis for exhalation airflow via sound intensity / velocity. */
 
 export type BreathSample = {
-  /** Smoothed RMS loudness 0–1 — proxy for airflow strength. */
+  /** Smoothed RMS loudness 0–1 — proxy for airflow strength above noise. */
   level: number
   /** Rate of change of level — exhalation sound velocity. */
   velocity: number
@@ -22,23 +22,33 @@ export type ExhaleQuality = {
   label: 'silent' | 'harsh' | 'uneven' | 'steady' | 'gentle'
 }
 
-/** Soft breath noise often sits well below speech — keep the floor low. */
-export const AUDIBLE_LEVEL = 0.012
+/**
+ * After noise-floor subtraction: soft intentional hiss clears this;
+ * room murmur usually does not.
+ */
+export const AUDIBLE_LEVEL = 0.045
 const IDEAL_LEVEL_MIN = AUDIBLE_LEVEL
 const IDEAL_LEVEL_MAX = 0.55
 const HARSH_SPEED = 0.45
-const SILENT_COVERAGE = 0.08
-/** Gain so quiet hiss registers without shouting. */
-const RMS_GAIN = 36
+const SILENT_COVERAGE = 0.1
+/** Mid gain: soft breath yes, ambient murmur no. */
+const RMS_GAIN = 18
+/** How far above the learned floor a sample must sit to count. */
+const FLOOR_MARGIN = 1.35
+const FLOOR_EXTRA = 0.02
 
 export class BreathMic {
   private stream: MediaStream | null = null
   private ctx: AudioContext | null = null
   private analyser: AnalyserNode | null = null
+  private highpass: BiquadFilterNode | null = null
   private source: MediaStreamAudioSourceNode | null = null
-  private data: Float32Array<ArrayBuffer> | null = null
+  private timeData: Float32Array<ArrayBuffer> | null = null
+  private freqData: Float32Array<ArrayBuffer> | null = null
   private raf = 0
   private running = false
+  private calibrating = true
+  private noiseFloor = 0.04
   private prevLevel = 0
   private prevTime = 0
   private onSample: ((sample: BreathSample) => void) | null = null
@@ -49,51 +59,110 @@ export class BreathMic {
       audio: {
         echoCancellation: false,
         noiseSuppression: false,
-        // Soft breath needs whatever gain the OS can give.
-        autoGainControl: true,
+        // AGC amplifies room noise when you are quiet — keep it off.
+        autoGainControl: false,
       },
       video: false,
     })
     this.ctx = new AudioContext()
     if (this.ctx.state === 'suspended') await this.ctx.resume()
     this.source = this.ctx.createMediaStreamSource(this.stream)
+
+    // Breath hiss lives mid/high; cut rumble and low room noise.
+    this.highpass = this.ctx.createBiquadFilter()
+    this.highpass.type = 'highpass'
+    this.highpass.frequency.value = 400
+    this.highpass.Q.value = 0.7
+
     this.analyser = this.ctx.createAnalyser()
-    this.analyser.fftSize = 1024
-    this.analyser.smoothingTimeConstant = 0.05
-    this.source.connect(this.analyser)
-    this.data = new Float32Array(this.analyser.fftSize) as Float32Array<ArrayBuffer>
+    this.analyser.fftSize = 2048
+    this.analyser.smoothingTimeConstant = 0.35
+    this.source.connect(this.highpass)
+    this.highpass.connect(this.analyser)
+
+    this.timeData = new Float32Array(this.analyser.fftSize) as Float32Array<ArrayBuffer>
+    this.freqData = new Float32Array(this.analyser.frequencyBinCount) as Float32Array<ArrayBuffer>
+    this.noiseFloor = 0.04
     this.prevLevel = 0
     this.prevTime = performance.now()
+    this.calibrating = true
     this.running = true
     this.tick()
+  }
+
+  /** While true, samples update the ambient floor (inhale / idle). */
+  setCalibrating(on: boolean): void {
+    this.calibrating = on
   }
 
   stop(): void {
     this.running = false
     cancelAnimationFrame(this.raf)
     this.source?.disconnect()
+    this.highpass?.disconnect()
     void this.ctx?.close()
     this.stream?.getTracks().forEach((t) => t.stop())
     this.stream = null
     this.ctx = null
     this.analyser = null
+    this.highpass = null
     this.source = null
-    this.data = null
+    this.timeData = null
+    this.freqData = null
     this.onSample = null
   }
 
-  private tick = (): void => {
-    if (!this.running || !this.analyser || !this.data || !this.onSample) return
-    this.analyser.getFloatTimeDomainData(this.data)
+  private readRaw(): number {
+    if (!this.analyser || !this.timeData || !this.freqData || !this.ctx) return 0
+    this.analyser.getFloatTimeDomainData(this.timeData)
     let sum = 0
-    for (let i = 0; i < this.data.length; i++) {
-      const v = this.data[i]!
+    for (let i = 0; i < this.timeData.length; i++) {
+      const v = this.timeData[i]!
       sum += v * v
     }
-    const rms = Math.sqrt(sum / this.data.length)
-    // Soft compress into 0–1; high gain so quiet exhalation still moves the meter.
-    const raw = Math.min(1, Math.pow(rms * RMS_GAIN, 0.85))
-    const level = this.prevLevel * 0.45 + raw * 0.55
+    const rms = Math.sqrt(sum / this.timeData.length)
+
+    this.analyser.getFloatFrequencyData(this.freqData)
+    const binHz = this.ctx.sampleRate / this.analyser.fftSize
+    // Prefer 1–5 kHz energy — typical for soft turbulent breath hiss.
+    const lo = Math.max(1, Math.floor(1000 / binHz))
+    const hi = Math.min(this.freqData.length - 1, Math.floor(5000 / binHz))
+    let hiss = 0
+    let n = 0
+    for (let i = lo; i <= hi; i++) {
+      // dB values are negative; map a useful slice into 0–1.
+      const db = this.freqData[i]!
+      hiss += Math.max(0, Math.min(1, (db + 90) / 55))
+      n++
+    }
+    const hissLevel = n > 0 ? hiss / n : 0
+
+    const broadband = Math.min(1, Math.pow(rms * RMS_GAIN, 0.9))
+    // Weight spectral hiss so flat room noise is less likely to win.
+    return Math.min(1, broadband * 0.45 + hissLevel * 0.55)
+  }
+
+  private tick = (): void => {
+    if (!this.running || !this.onSample) return
+    const raw = this.readRaw()
+
+    if (this.calibrating) {
+      this.noiseFloor = this.noiseFloor * 0.92 + raw * 0.08
+      this.prevLevel = 0
+      this.prevTime = performance.now()
+      this.onSample({
+        level: 0,
+        velocity: 0,
+        speed: 0,
+        timestamp: this.prevTime,
+      })
+      this.raf = requestAnimationFrame(this.tick)
+      return
+    }
+
+    const gate = this.noiseFloor * FLOOR_MARGIN + FLOOR_EXTRA
+    const excess = raw > gate ? Math.min(1, (raw - this.noiseFloor) / Math.max(0.15, 1 - this.noiseFloor)) : 0
+    const level = this.prevLevel * 0.55 + excess * 0.45
     const now = performance.now()
     const dt = Math.max(0.016, (now - this.prevTime) / 1000)
     const velocity = (level - this.prevLevel) / dt
@@ -145,7 +214,7 @@ export function scoreExhale(samples: BreathSample[]): ExhaleQuality {
   let label: ExhaleQuality['label'] = 'steady'
   if (meanSpeed > HARSH_SPEED * 0.85) label = 'harsh'
   else if (speedFit < 0.55 || coverageFit < 0.45) label = 'uneven'
-  else if (meanLevel < 0.1) label = 'gentle'
+  else if (meanLevel < 0.12) label = 'gentle'
   else label = 'steady'
 
   return { score, meanLevel, meanSpeed, coverage, label }

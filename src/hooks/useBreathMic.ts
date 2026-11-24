@@ -30,6 +30,7 @@ export function useBreathMic() {
           })
         }
       })
+      mic.setCalibrating(true)
       micRef.current = mic
       setStatus('live')
       return true
@@ -51,6 +52,7 @@ export function useBreathMic() {
 
   const setListening = useCallback((on: boolean) => {
     listeningRef.current = on
+    micRef.current?.setCalibrating(!on)
     if (!on) {
       setSample((s) => ({ ...s, level: 0, velocity: 0, speed: 0 }))
     }

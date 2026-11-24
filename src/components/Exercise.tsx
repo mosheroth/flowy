@@ -40,7 +40,8 @@ function phaseSub(
     if (cycle > 1 && label) return QUALITY_COPY[label]
     return 'Fill gently through the nose'
   }
-  if (phase === 'exhale') return 'A soft hiss is enough — no need to push'
+  if (phase === 'exhale')
+    return 'Soft hiss near the mic — ambient noise is ignored'
   if (phase === 'done') return 'Steady exhalation trains calmer speech airflow'
   return ''
 }
